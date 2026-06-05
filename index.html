@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mini Brawl Stars 2D</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            background-color: #222;
+            color: #fff;
+            font-family: 'Arial', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+            user-select: none;
+        }
+        #ui {
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        #canvas-container {
+            position: relative;
+            box-shadow: 0 0 20px rgba(0,0,0,0.7);
+        }
+        canvas {
+            background-color: #4a8505; /* Gramado */
+            border: 4px solid #fff;
+            display: block;
+            cursor: crosshair;
+        }
+        .hud-bar {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 20px;
+            background: rgba(0,0,0,0.6);
+            padding: 10px 20px;
+            border-radius: 10px;
+            pointer-events: none;
+        }
+        .bar-container {
+            width: 150px;
+            height: 20px;
+            background: #444;
+            border-radius: 5px;
+            overflow: hidden;
+            border: 2px solid #fff;
+        }
+        #hp-fill {
+            width: 100%;
+            height: 100%;
+            background: #00ff00;
+            transition: width 0.1s;
+        }
+        #super-fill {
+            width: 0%;
+            height: 100%;
+            background: #ffaa00;
+            transition: width 0.1s;
+        }
+        #game-over {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            color: red;
+        }
+        button {
+            margin-top: 15px;
+            padding: 10px 20px;
+            font-size: 18px;
+            background: #ffcc00;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ui">
+        <h1>MINI BRAWL 2D</h1>
+        <p>Use W, A, S, D para mover | Clique para Atirar | Tecla E para o SUPER (quando cheio)</p>
+        <p>Pontos: <span id="score">0</span></p>
+    </div>
+
+    <div id="canvas-container">
+        <canvas id="gameCanvas" width="800" height="500"></canvas>
+        
+        <div class="hud-bar">
+            <div>HP: <div class="bar-container"><div id="hp-fill"></div></div></div>
+            <div>SUPER (E): <div class="bar-container"><div id="super-fill"></div></div></div>
+        </div>
+
+        <div id="game-over">
+            <h2>FIM DE JOGO!</h2>
+            <button onclick="resetGame()">Jogar Novamente</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const hpFill = document.getElementById('hp-fill');
+        const superFill = document.getElementById('super-fill');
+        const scoreEl = document.getElementById('score');
+        const gameOverScreen = document.getElementById('game-over');
+
+        // Configurações do Jogador (Brawler)
+        let player = {
+            x: 400,
+            y: 250,
+            radius: 20,
+            speed: 4,
+            hp: 100,
+            maxHp: 100,
+            superCharge: 0,
+            maxSuper: 100
+        };
+
+        let keys = {};
+        let mouse = { x: 0, y: 0 };
+        let projectiles = [];
+        let enemies = [];
+        let score = 0;
+        let gameActive = true;
+
+        // Controles de movimento
+        window.addEventListener('keydown', (e) => keys[e.key.toLowerCase()] = true);
+        window.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
+        
+        // Atualiza posição do mouse relativo ao canvas
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            mouse.x = e.clientX - rect.left;
+            mouse.y = e.clientY - rect.top;
+        });
+
+        // Mecânica de Tiro
+        canvas.addEventListener('mousedown', () => {
+            if (!gameActive) return;
+            fireProjectile(false);
+        });
+
+        // Ativar Super
+        window.addEventListener('keydown', (e) => {
+            if (e.key.toLowerCase() === 'e' && player.superCharge >= player.maxSuper && gameActive) {
+                fireProjectile(true);
+                player.superCharge = 0;
+                superFill.style.width = '0%';
+            }
+        });
+
+        function fireProjectile(isSuper) {
+            const angle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
+            projectiles.push({
+                x: player.x,
+                y: player.y,
+                radius: isSuper ? 15 : 6,
+                speed: isSuper ? 10 : 8,
+                angle: angle,
+                color: isSuper ? '#ff3300' : '#00ffff',
+                isSuper: isSuper,
+                damage: isSuper ? 50 : 20
+            });
+        }
+
+        // Criar Inimigos (Robôs/Brawlers Inimigos)
+        function spawnEnemy() {
+            if (!gameActive) return;
+            let x, y;
+            if (Math.random() < 0.5) {
+                x = Math.random() < 0.5 ? 0 : canvas.width;
+                y = Math.random() * canvas.height;
+            } else {
+                x = Math.random() * canvas.width;
+                y = Math.random() < 0.5 ? 0 : canvas.height;
+            }
+            enemies.push({
+                x: x,
+                y: y,
+                radius: 18,
+                speed: Math.random() * 1.5 + 1,
+                hp: 40,
+                maxHp: 40,
+                color: '#ff2222'
+            });
+            setTimeout(spawnEnemy, Math.max(1000 - score * 10, 400)); // Dificuldade aumenta
+        }
+
+        // Loop de Atualização do Jogo
+        function update() {
+            if (!gameActive) return;
+
+            // Movimento do Jogador (com limite de borda)
+            if (keys['w'] && player.y > player.radius) player.y -= player.speed;
+            if (keys['s'] && player.y < canvas.height - player.radius) player.y += player.speed;
+            if (keys['a'] && player.x > player.radius) player.x -= player.speed;
+            if (keys['d'] && player.x < canvas.width - player.radius) player.x += player.speed;
+
+            // Atualizar Projéteis
+            for (let i = projectiles.length - 1; i >= 0; i--) {
+                let p = projectiles[i];
+                p.x += Math.cos(p.angle) * p.speed;
+                p.y += Math.sin(p.angle) * p.speed;
+
+                // Remove se sair da tela
+                if (p.x < 0 || p.x > canvas.width || p.y < 0 || p.y > canvas.height) {
+                    projectiles.splice(i, 1);
+                }
+            }
+
+            // Atualizar Inimigos
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                let e = enemies[i];
+
+                // Seguir o jogador
+                let angle = Math.atan2(player.y - e.y, player.x - e.x);
+                e.x += Math.cos(angle) * e.speed;
+                e.y += Math.sin(angle) * e.speed;
+
+                // Colisão Inimigo vs Jogador (Dano no jogador)
+                let distToPlayer = Math.hypot(player.x - e.x, player.y - e.y);
+                if (distToPlayer < player.radius + e.radius) {
+                    player.hp -= 0.5; // Dano contínuo por contato
+                    hpFill.style.width = `${Math.max(0, player.hp)}%`;
+                    if (player.hp <= 0) {
+                        endGame();
+                    }
+                }
+
+                // Colisão Projétil vs Inimigo
+                for (let j = projectiles.length - 1; j >= 0; j--) {
+                    let p = projectiles[j];
+                    let distToProj = Math.hypot(e.x - p.x, e.y - p.y);
+
+                    if (distToProj < e.radius + p.radius) {
+                        e.hp -= p.damage;
+                        projectiles.splice(j, 1); // Remove projétil
+
+                        // Carrega o Super se não for o próprio Super
+                        if (!p.isSuper && player.superCharge < player.maxSuper) {
+                            player.superCharge = Math.min(player.maxSuper, player.superCharge + 15);
+                            superFill.style.width = `${player.superCharge}%`;
+                        }
+
+                        // Morte do Inimigo
+                        if (e.hp <= 0) {
+                            enemies.splice(i, 1);
+                            score += 10;
+                            scoreEl.innerText = score;
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Renderização Gráfica (Desenho)
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Desenhar Projéteis
+            projectiles.forEach(p => {
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+                ctx.fillStyle = p.color;
+                ctx.fill();
+                ctx.closePath();
+            });
+
+            // Desenhar Inimigos
+            enemies.forEach(e => {
+                ctx.beginPath();
+                ctx.arc(e.x, e.y, e.radius, 0, Math.PI * 2);
+                ctx.fillStyle = e.color;
+                ctx.fill();
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                ctx.closePath();
+
+                // Barra de vida pequena sobre o inimigo
+                ctx.fillStyle = '#ff0000';
+                ctx.fillRect(e.x - 15, e.y - 28, 30, 4);
+                ctx.fillStyle = '#00ff00';
+                ctx.fillRect(e.x - 15, e.y - 28, (e.hp / e.maxHp) * 30, 4);
+            });
+
+            // Desenhar Jogador (Brawler Colt / Shelly genérico)
+            ctx.beginPath();
+            ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+            ctx.fillStyle = '#00a2ff'; // Azul Brawl
+            ctx.fill();
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            ctx.closePath();
+
+            // Indicador de direção/mira do jogador
+            let aimAngle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
+            ctx.beginPath();
+            ctx.moveTo(player.x, player.y);
+            ctx.lineTo(player.x + Math.cos(aimAngle) * 30, player.y + Math.sin(aimAngle) * 30);
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 4;
+            ctx.stroke();
+        }
+
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function endGame() {
+            gameActive = false;
+            gameOverScreen.style.display = 'flex';
+        }
+
+        function resetGame() {
+            player.hp = 100;
+            player.superCharge = 0;
+            player.x = 400;
+            player.y = 250;
+            enemies = [];
+            projectiles = [];
+            score = 0;
+            scoreEl.innerText = score;
+            hpFill.style.width = '100%';
+            superFill.style.width = '0%';
+            gameOverScreen.style.display = 'none';
+            gameActive = true;
+        }
+
+        // Iniciar jogo
+        spawnEnemy();
+        gameLoop();
+    </script>
+</body>
+</html>
